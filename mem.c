@@ -22,13 +22,9 @@ void mem_init(void) {
   heap_end = heap_base + 800;
 
   // create some free blocks: five of 80 bytes and one of 400 bytes
-  void *block_ptr;
-  for (int i = 0; i < 5; i++) {
-    block_ptr = heap_base + 80 * i;
-    *((int64_t *)block_ptr) = 80;
-  }
-  block_ptr = heap_base + 400;
-  *((int64_t *)block_ptr) = 400;
+  *((int64_t *)heap_base) = 800;
+
+  *((int64_t *)(heap_end - 1)) = 800;
 
   mem_initialized = 1;
 }
@@ -38,7 +34,7 @@ void *mem_alloc(int64_t length) {
 
   // compute actual size of block
   length = (length + 7) / 8 * 8; // round up to nearest multiple of 8
-  length += 8;                   // add space for the header
+  length += 16;                  // add space for the header
 
   // heap traversal
   void *block_ptr;
@@ -70,12 +66,16 @@ void *mem_alloc(int64_t length) {
     int64_t new_size = size - length;
     int64_t new_header = new_size | 0b000;
     size = length;
-    *(int64_t *)(block_ptr + size) = new_header;
+    *(int64_t *)(block_ptr + size) = new_header; // header of the new block
+    *(int64_t *)(block_ptr + size + new_size - 1) =
+        new_header; // footer of the new block
   }
 
   flags = 0b001; // mark block as taken
   header = size | flags;
   *((int64_t *)block_ptr) = header; // write header back into the block
+  *((int64_t *)(block_ptr + size - 1)) =
+      header; // write footer back into the block
 
   return block_ptr + 8; // skip header
 }
@@ -85,11 +85,34 @@ void mem_release(void *ptr) {
   assert(((int64_t)ptr % 8) == 0); // sanity check
   ptr -= 8;
   printf("%p\n", ptr);
-  char flags = 0b000;
-  int64_t size = *(int64_t *)ptr & ~0b111;
-  int64_t header = size | flags;
+  const char flagsForFree = 0b000;
+  const int64_t size = *(int64_t *)ptr & ~0b111;
+  int64_t header = size | flagsForFree;
 
   *(int64_t *)ptr = header;
+  *(int64_t *)(ptr + size - 1) = header;
+
+  if (!(*(int64_t *)(ptr - 8) &
+        0b111)) // if the footer of the block before is "free"
+  {
+    int64_t sizeOfBefore = *(int64_t *)(ptr - 8);
+    ptr -= sizeOfBefore;
+    const int64_t new_size = size + sizeOfBefore;
+    header = size | flagsForFree;
+    *(int64_t *)(ptr) = header;
+    *(int64_t *)(ptr + new_size - 1) = header;
+  }
+
+//   if (!(*(int64_t *)(ptr - 8) &
+//         0b111)) // if the footer of the block before is "free"
+//   {
+//     int64_t sizeOfBefore = *(int64_t *)(ptr - 8);
+//     ptr -= sizeOfBefore;
+//     const int64_t new_size = size + sizeOfBefore;
+//     header = size | flagsForFree;
+//     *(int64_t *)(ptr) = header;
+//     *(int64_t *)(ptr + new_size - 1) = header;
+//   }
 }
 
 void mem_show_heap(void) {
