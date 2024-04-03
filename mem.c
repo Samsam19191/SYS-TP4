@@ -66,7 +66,12 @@ void *mem_alloc(int64_t length) {
     return NULL;
   }
 
-  
+  if (size > length) {
+    int64_t new_size = size - length;
+    int64_t new_header = new_size | 0b000;
+    size = length;
+    *(int64_t *)(block_ptr + size) = new_header;
+  }
 
   flags = 0b001; // mark block as taken
   header = size | flags;
